@@ -569,7 +569,7 @@ function fillFilters(){
   $("fArea").value=S.area;$("fAreaV").textContent=S.area?S.area+" m²":"—";
   $("fKm").value=S.km;$("fKmV").textContent=num(S.km)+" km";
   $("kmBox").hidden=S.loc!=="km";
-  $("fSrc").innerHTML=SOURCES.map(w=>{const on=!S.off.includes(w);const n=data.filter(x=>x.source===w&&active(x)).length;return `<button class="opt ${on?"on":""}" data-w="${w}">${on?'<i data-lucide="check"></i>':""}${w}<span style="opacity:.6;font-weight:400">${n||""}</span></button>`}).join("");
+  $("fSrc").innerHTML=SOURCES.map(w=>{const on=!S.off.includes(w);const n=data.filter(x=>x.source===w&&active(x)).length;return `<button class="opt ${on?"on":""}" data-w="${w}">${on?'<i data-lucide="check"></i>':""}${w}<span style="opacity:.55;font-weight:400;margin-left:2px;font-variant-numeric:tabular-nums">${n||""}</span></button>`}).join("");
   icons();
 }
 $("fDisp").onclick=e=>{const b=e.target.closest("[data-d]");if(!b)return;const d=b.dataset.d;S.disp=S.disp.includes(d)?S.disp.filter(x=>x!==d):[...S.disp,d];fillFilters();render()};
