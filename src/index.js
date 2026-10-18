@@ -108,13 +108,29 @@ export default {
       const meta = await env.DB.prepare("SELECT v FROM meta WHERE k='last_run'").first();
       return Response.json({ listings: results, lastRun: meta ? Number(meta.v) : null, home: [env.HOME_LAT, env.HOME_LON] });
     }
-    if (url.pathname === "/api/_dbg") {
-      const r = await fetch("https://www.sreality.cz/api/v1/estates/" + url.searchParams.get("id"), { headers: { "User-Agent": UA, Accept: "application/json" } });
-      const j = await r.json();
-      const pick = {};
-      const walk = (o, p) => { for (const [k, v] of Object.entries(o || {})) { if (v && typeof v === "object" && !Array.isArray(v)) walk(v, p + k + "."); else if (/date|since|edit|creat|updat|publi|insert|time|age|stamp/i.test(k)) pick[p + k] = v; } };
-      walk(j, "");
-      return Response.json({ status: r.status, keys: Object.keys(j), pick });
+    if (url.pathname === "/api/_probe") {
+      // dočasné: pevně dané testovací dotazy na zdroje, po dokončení odstranit
+      const BR = { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36", "Accept-Language": "cs-CZ,cs;q=0.9" };
+      const bzQ = 'query ListAdverts($offerType:[OfferType],$estateType:[EstateType],$regionOsmIds:[ID],$limit:Int,$offset:Int,$locale:Locale!){listAdverts(offerType:$offerType,estateType:$estateType,regionOsmIds:$regionOsmIds,limit:$limit,offset:$offset){totalCount list{id uri disposition price charges surface address(locale:$locale) gps{lat lng} mainImage{url(filter:RECORD_THUMB)} timeActivated}}}';
+      const P = [
+        ["https://www.sreality.cz/api/v1/estates/3100057676", {}],
+        ["https://api.bezrealitky.cz/graphql/", { method: "POST", headers: { ...BR, "Content-Type": "application/json" }, body: JSON.stringify({ operationName: "ListAdverts", variables: { offerType: ["PRONAJEM"], estateType: ["BYT"], regionOsmIds: ["R438171"], limit: 2, offset: 0, locale: "CS" }, query: bzQ }) }],
+        ["https://reality.idnes.cz/s/pronajem/byty/brno-mesto/", { headers: BR }],
+        ["https://reality.bazos.cz/pronajmu/byt/?hlokalita=62500&humkreis=5&cenado=25000", { headers: BR }],
+        ["https://ud.api.ulovdomov.cz/v1/offer/find?page=1&perPage=3&sorting=latest", { method: "POST", headers: { ...BR, "Content-Type": "application/json" }, body: JSON.stringify({ offerType: "rent", propertyType: "flat", bounds: { northEast: { lat: 49.2, lng: 16.64 }, southWest: { lat: 49.12, lng: 16.52 } } }) }],
+        ["https://www.ulovdomov.cz/fe-api/find", { method: "POST", headers: { ...BR, "Content-Type": "application/json" }, body: JSON.stringify({ offer_type_id: "1", page: 1, limit: 3, sort_by: "date:desc", ne_lat: 49.2, ne_lng: 16.64, sw_lat: 49.12, sw_lng: 16.52 }) }],
+        ["https://realitymix.cz/vypis-nabidek/?form%5Binzerat_typ%5D=2&form%5Bnemovitost_typ%5D=4&form%5Bfulltext%5D=Brno", { headers: BR }],
+        ["https://www.reality.cz/pronajem/byty/Brno/", { headers: BR }],
+        ["https://www.sreality.cz/api/v1/estates/search?category_main_cb=1&category_type_cb=2&locality_district_id=72&limit=1", {}],
+      ];
+      const n = parseInt(url.searchParams.get("n") || "0", 10);
+      const [pu, po] = P[n] || P[0];
+      const r = await fetch(pu, { headers: { "User-Agent": UA, Accept: "*/*" }, ...po });
+      let t = await r.text();
+      const mark = url.searchParams.get("at");
+      let start = parseInt(url.searchParams.get("o") || "0", 10);
+      if (mark) { const i = t.indexOf(mark); if (i >= 0) start = i + start; }
+      return new Response("STATUS " + r.status + " LEN " + t.length + "\n" + t.slice(start, start + 7000), { headers: { "content-type": "text/plain; charset=utf-8" } });
     }
     if (url.pathname === "/api/refresh" && req.method === "POST") {
       const last = await env.DB.prepare("SELECT v FROM meta WHERE k='last_run'").first();
