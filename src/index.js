@@ -59,24 +59,26 @@ async function collect(env) {
   const hLat = parseFloat(env.HOME_LAT), hLon = parseFloat(env.HOME_LON);
   const fresh = [];
   const errors = [];
+  const all = [];
   for (const src of SOURCES) {
     try {
       for (const l of await src()) {
         if (l.lat == null || l.lon == null) continue;
         l.km = Math.round(km(hLat, hLon, l.lat, l.lon) * 100) / 100;
-        if (l.km > MAX_KM_STORE) continue;
-        const existing = await env.DB.prepare("SELECT id FROM listings WHERE id=?").bind(l.id).first();
-        if (existing) {
-          await env.DB.prepare("UPDATE listings SET last_seen=?, price=? WHERE id=?").bind(now, l.price, l.id).run();
-        } else {
-          await env.DB.prepare(`INSERT INTO listings (id,source,title,price,disposition,area,locality,lat,lon,km,url,image,first_seen,last_seen)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-            .bind(l.id, l.source, l.title, l.price, l.disposition, l.area, l.locality, l.lat, l.lon, l.km, l.url, l.image, now, now).run();
-          fresh.push(l);
-        }
+        if (l.km <= MAX_KM_STORE) all.push(l);
       }
     } catch (e) { errors.push(String(e)); }
   }
+  const { results: ex } = await env.DB.prepare("SELECT id FROM listings").all();
+  const known = new Set(ex.map((r) => r.id));
+  const stmt = env.DB.prepare(`INSERT INTO listings (id,source,title,price,disposition,area,locality,lat,lon,km,url,image,first_seen,last_seen)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen, price=excluded.price, url=excluded.url, image=excluded.image, locality=excluded.locality`);
+  const stmts = all.map((l) => {
+    if (!known.has(l.id)) fresh.push(l);
+    return stmt.bind(l.id, l.source, l.title, l.price, l.disposition, l.area, l.locality, l.lat, l.lon, l.km, l.url, l.image, now, now);
+  });
+  for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
   await env.DB.prepare("INSERT OR REPLACE INTO meta (k,v) VALUES ('last_run',?),('last_errors',?)")
     .bind(String(now), JSON.stringify(errors)).run();
   await notify(env, fresh);
