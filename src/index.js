@@ -163,7 +163,9 @@ async function srcIdnes(F) {
         id: "idnes-" + (idm ? idm[1] : url), source: "iDNES Reality", title: title.replace(/^pronájem\s*/i, "Pronájem "),
         price: /měs/i.test(priceTxt) || /Kč/.test(priceTxt) ? toInt(priceTxt) : null,
         disposition: dispFrom(title), area: areaFrom(title), locality: loc,
-        lat: null, lon: null, geoq: loc, url, image: img,
+        lat: null, lon: null, url, image: img,
+        // nejdřív ulice, jinak střed čtvrti ("Brno - Komín" → "Komín, Brno")
+        geoq: loc + (/Brno\s*-\s*(.+)$/.test(loc) ? "|" + loc.replace(/^.*Brno\s*-\s*(.+)$/, "$1, Brno") : ""),
       });
     }
     if (!html.includes(`?page=${page + 1}"`)) break;
@@ -172,25 +174,28 @@ async function srcIdnes(F) {
 }
 
 // ---------- ZDROJ: Bazoš (HTML, poloha podle ulice/PSČ) ----------
+const stats_bazos = {};
 async function srcBazos(F) {
+  stats_bazos.items = 0;
   const out = [];
   for (let page = 0; page < 4; page++) {
     const res = await F(`https://reality.bazos.cz/pronajmu/byt/${page ? page * 20 + "/" : ""}?hlokalita=62500&humkreis=6&cenado=${MAX_PRICE_STORE}`, { headers: { ...BROWSER, Accept: "text/html" } });
     if (!res.ok) throw new Error("Bazoš HTTP " + res.status);
     const html = await res.text();
-    const items = html.split(/class="inzeraty inzeratyflex"/).slice(1);
+    const items = html.split(/class=["']?inzeraty inzeratyflex/).slice(1);
+    if (!page && !items.length) throw new Error("Bazoš: nenalezeny inzeráty (délka " + html.length + ", ukázka: " + html.slice(Math.max(0, html.indexOf("inzerat")), Math.max(0, html.indexOf("inzerat")) + 160).replace(/\s+/g, " ") + ")");
     for (const it of items) {
-      const a = it.match(/<h2 class="nadpis"><a href="([^"]+)">([\s\S]*?)<\/a>/);
+      const a = it.match(/<h2[^>]*nadpis[^>]*>\s*<a[^>]*href=["']?([^"' >]+)["']?[^>]*>([\s\S]*?)<\/a>/);
       if (!a) continue;
       const path = a[1];
       const idm = path.match(/\/inzerat\/(\d+)\//);
       const title = decode(a[2]);
-      const desc = decode((it.match(/<div class="popis">([\s\S]*?)<\/div>/) || [])[1]);
-      const price = toInt(decode((it.match(/<div class="inzeratycena">([\s\S]*?)<\/div>/) || [])[1]));
-      const lok = (it.match(/<div class="inzeratylok">([\s\S]*?)<\/div>/) || [])[1] || "";
+      const desc = decode((it.match(/<div[^>]*popis[^>]*>([\s\S]*?)<\/div>/) || [])[1]);
+      const price = toInt(decode((it.match(/<div[^>]*inzeratycena[^>]*>([\s\S]*?)<\/div>/) || [])[1]));
+      const lok = (it.match(/<div[^>]*inzeratylok[^>]*>([\s\S]*?)<\/div>/) || [])[1] || "";
       const [city, psc] = lok.split(/<br\s*\/?>/i).map(decode);
       const dm = it.match(/\[(\d{1,2})\.(\d{1,2})\.\s*(\d{4})\]/);
-      const img = (it.match(/<img[^>]+src="([^"]+)"[^>]*class="obrazek"|class="obrazek"[^>]*src="([^"]+)"/) || []);
+      const img = (it.match(/<img[^>]+src="([^"]+)"[^>]*obrazek|obrazek[^>]*src="([^"]+)"/) || []);
       const disp = dispFrom(title) || dispFrom(desc);
       if (!disp) continue; // pokoje, podnájmy spolubydlení apod.
       out.push({
@@ -206,6 +211,7 @@ async function srcBazos(F) {
         posted_at: dm ? Date.UTC(+dm[3], +dm[2] - 1, +dm[1], 10) : null, posted_kind: "published",
       });
     }
+    stats_bazos.items = (stats_bazos.items || 0) + items.length;
     if (items.length < 20) break;
   }
   return out;
@@ -222,12 +228,14 @@ const SOURCES = [
 // ---------- dohledání polohy (Nominatim, výsledky se ukládají) ----------
 async function geocode(env, F, q) {
   if (q.includes("|")) {
-    for (const part of q.split("|").filter(Boolean)) {
-      const g = await geocode(env, F, part);
-      if (g === undefined) return undefined;
-      if (g) return g;
+    const parts = q.split("|").filter(Boolean);
+    let pending = false;
+    for (let i = 0; i < parts.length; i++) {
+      const g = await geocode(env, F, parts[i]);
+      if (g === undefined) { pending = true; continue; } // nedohledáno kvůli rozpočtu, zkus hrubší úroveň
+      if (g) return { ...g, level: i, pending };
     }
-    return null;
+    return pending ? undefined : null;
   }
   const hit = await env.DB.prepare("SELECT lat, lon, ok FROM geo WHERE q=?").bind(q).first();
   if (hit) return hit.ok ? hit : null;
@@ -258,7 +266,7 @@ async function collect(env) {
   const hLat = parseFloat(env.HOME_LAT), hLon = parseFloat(env.HOME_LON);
   const metaRows = (await env.DB.prepare("SELECT k, v FROM meta").all()).results;
   const meta = Object.fromEntries(metaRows.map((r) => [r.k, r.v]));
-  const { results: ex } = await env.DB.prepare("SELECT id, lat, lon FROM listings").all();
+  const { results: ex } = await env.DB.prepare("SELECT id, lat, lon, approx FROM listings").all();
   const known = new Map(ex.map((r) => [r.id, r]));
   const stats = {}, errors = [], fresh = [], all = [], metaSet = [];
 
@@ -269,6 +277,7 @@ async function collect(env) {
     try {
       got.push([name, await fn(F)]);
       stats[name] = { found: got[got.length - 1][1].length, ms: Date.now() - t0 };
+      if (name === "Bazoš") stats[name].items = stats_bazos.items;
       metaSet.push(["ok_" + name, String(now)]);
       if (!meta["first_" + name]) metaSet.push(["first_" + name, String(now)]);
     } catch (e) {
@@ -283,12 +292,13 @@ async function collect(env) {
       if (!l.price || l.price > MAX_PRICE_STORE || !l.disposition) continue;
       if (l.lat == null || l.lon == null) {
         const prev = known.get(l.id);
-        if (prev && prev.lat != null) { l.lat = prev.lat; l.lon = prev.lon; }
+        l.approx = 1;
+        if (prev && prev.lat != null && prev.approx !== 2) { l.lat = prev.lat; l.lon = prev.lon; }
         else if (l.geoq) {
           const g = await geocode(env, F, l.geoq);
-          if (g) { l.lat = g.lat; l.lon = g.lon; }
+          if (g) { l.lat = g.lat; l.lon = g.lon; l.approx = g.level > 0 && g.pending ? 2 : 1; /* 2 = jen střed čtvrti, ulice se dohledá příště */ }
+          else if (prev && prev.lat != null) { l.lat = prev.lat; l.lon = prev.lon; l.approx = prev.approx; }
         }
-        l.approx = 1;
       }
       if (l.lat != null) {
         l.km = Math.round(km(hLat, hLon, l.lat, l.lon) * 100) / 100;
@@ -303,7 +313,7 @@ async function collect(env) {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen, price=excluded.price, url=excluded.url, image=excluded.image,
       locality=excluded.locality, title=excluded.title, area=excluded.area,
-      lat=COALESCE(excluded.lat, listings.lat), lon=COALESCE(excluded.lon, listings.lon), km=COALESCE(excluded.km, listings.km),
+      lat=COALESCE(excluded.lat, listings.lat), lon=COALESCE(excluded.lon, listings.lon), km=COALESCE(excluded.km, listings.km), approx=excluded.approx,
       posted_at=COALESCE(excluded.posted_at, listings.posted_at), posted_kind=COALESCE(excluded.posted_kind, listings.posted_kind)`);
   const stmts = all.map((l) => {
     if (!known.has(l.id)) fresh.push(l);
