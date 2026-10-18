@@ -15,32 +15,37 @@ function km(lat1, lon1, lat2, lon2) {
 async function fetchSreality() {
   const out = [];
   for (const district of [72, 73]) { // 72 Brno-město, 73 Brno-venkov (Modřice)
-    for (let page = 1; page <= 5; page++) {
-      const url = "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=1&category_type_cb=2" +
-        "&category_sub_cb=2|3|4|5|6|7&locality_region_id=14&locality_district_id=" + district +
-        "&czk_price_summary_order2=0|26000&per_page=60&page=" + page;
+    for (let offset = 0; offset < 1500; offset += 100) {
+      const url = "https://www.sreality.cz/api/v1/estates/search?category_main_cb=1&category_type_cb=2" +
+        "&locality_district_id=" + district + "&limit=100&offset=" + offset;
       const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
       if (!res.ok) throw new Error("Sreality HTTP " + res.status);
       const data = await res.json();
-      const estates = data?._embedded?.estates || [];
-      for (const e of estates) {
-        const name = e.name || "";
-        const disp = (name.match(/(\d\+(?:kk|\d))/i) || [])[1] || "";
+      const results = data?.results || [];
+      for (const e of results) {
+        const name = (e.advert_name || "").replace(/ /g, " ");
+        const disp = (e.category_sub_cb?.name || (name.match(/(\d\+(?:kk|\d))/i) || [])[1] || "").toLowerCase();
         const area = parseInt((name.match(/(\d+)\s*m²/) || [])[1] || "0", 10);
+        const loc = e.locality || {};
+        const price = e.price_summary_czk || e.price_czk || null;
+        if (price && price > 30000) continue;
+        const slug = [loc.city_seo_name, loc.citypart_seo_name, loc.street_seo_name].filter(Boolean).join("-") || "brno";
+        const img = e.advert_images?.[0] || "";
         out.push({
           id: "sreality-" + e.hash_id,
           source: "Sreality",
-          title: name.replace(/\u00a0/g, " "),
-          price: e.price_czk?.value_raw ?? e.price ?? null,
-          disposition: disp.toLowerCase(),
+          title: name,
+          price: price ? Math.round(price) : null,
+          disposition: disp,
           area,
-          locality: e.locality || "",
-          lat: e.gps?.lat, lon: e.gps?.lon,
-          url: "https://www.sreality.cz/detail/pronajem/byt/x/x/" + e.hash_id,
-          image: e._links?.images?.[0]?.href || "",
+          locality: [loc.street, loc.citypart, loc.city].filter(Boolean).join(", "),
+          lat: loc.gps_lat, lon: loc.gps_lon,
+          url: `https://www.sreality.cz/detail/pronajem/byt/${encodeURIComponent(disp)}/${slug}/${e.hash_id}`,
+          image: img ? (img.startsWith("//") ? "https:" + img : img) + "?fl=res,400,300,3" : "",
         });
       }
-      if (estates.length < 60) break;
+      const total = data?.pagination?.total ?? 0;
+      if (results.length < 100 || offset + 100 >= total) break;
     }
   }
   return out;
