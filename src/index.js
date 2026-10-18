@@ -226,12 +226,13 @@ const SOURCES = [
 ];
 
 // ---------- dohledání polohy (Nominatim, výsledky se ukládají) ----------
-async function geocode(env, F, q) {
+async function geocode(env, F, q, reserve = 6) {
   if (q.includes("|")) {
     const parts = q.split("|").filter(Boolean);
     let pending = false;
     for (let i = 0; i < parts.length; i++) {
-      const g = await geocode(env, F, parts[i]);
+      // přesná ulice jen dokud zbývá dost rozpočtu, ať zbyde i na hrubší úroveň (čtvrť/PSČ)
+      const g = await geocode(env, F, parts[i], i === 0 && parts.length > 1 ? 14 : 6);
       if (g === undefined) { pending = true; continue; } // nedohledáno kvůli rozpočtu, zkus hrubší úroveň
       if (g) return { ...g, level: i, pending };
     }
@@ -239,7 +240,7 @@ async function geocode(env, F, q) {
   }
   const hit = await env.DB.prepare("SELECT lat, lon, ok FROM geo WHERE q=?").bind(q).first();
   if (hit) return hit.ok ? hit : null;
-  if (F.left() <= 6) return undefined; // došel rozpočet, zkusíme příště
+  if (F.left() <= reserve) return undefined; // došel rozpočet, zkusíme příště
   let url;
   if (q.startsWith("PSC:")) {
     const psc = q.slice(4);
