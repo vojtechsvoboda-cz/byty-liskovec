@@ -41,7 +41,7 @@ async function fetchSreality() {
           locality: [loc.street, loc.citypart, loc.city].filter(Boolean).join(", "),
           lat: loc.gps_lat, lon: loc.gps_lon,
           url: `https://www.sreality.cz/detail/pronajem/byt/${encodeURIComponent(disp)}/${slug}/${e.hash_id}`,
-          image: img ? (img.startsWith("//") ? "https:" + img : img) + "?fl=res,400,300,3" : "",
+          image: img ? (img.startsWith("//") ? "https:" + img : img) + "?fl=res,400,300,3|shr,,20|jpg,90" : "",
         });
       }
       const total = data?.pagination?.total ?? 0;
