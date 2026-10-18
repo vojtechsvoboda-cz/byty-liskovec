@@ -225,39 +225,68 @@ const SOURCES = [
   ["Bazoš", srcBazos],
 ];
 
-// ---------- dohledání polohy (Nominatim, výsledky se ukládají) ----------
-async function geocode(env, F, q, reserve = 6) {
-  if (q.includes("|")) {
-    const parts = q.split("|").filter(Boolean);
-    let pending = false;
-    for (let i = 0; i < parts.length; i++) {
-      // přesná ulice jen dokud zbývá dost rozpočtu, ať zbyde i na hrubší úroveň (čtvrť/PSČ)
-      const g = await geocode(env, F, parts[i], i === 0 && parts.length > 1 ? 14 : 6);
-      if (g === undefined) { pending = true; continue; } // nedohledáno kvůli rozpočtu, zkus hrubší úroveň
-      if (g) return { ...g, level: i, pending };
-    }
-    return pending ? undefined : null;
-  }
-  const hit = await env.DB.prepare("SELECT lat, lon, ok FROM geo WHERE q=?").bind(q).first();
-  if (hit) return hit.ok ? hit : null;
-  if (F.left() <= reserve) return undefined; // došel rozpočet, zkusíme příště
+// ---------- dohledání polohy (Nominatim, výsledky se ukládají do tabulky geo) ----------
+// geoq má podobu "ulice, Brno|čtvrť, Brno" nebo "ulice, Brno|PSC:62500" – od nejpřesnější úrovně po nejhrubší
+async function geoLookup(F, q) {
   let url;
   if (q.startsWith("PSC:")) {
     const psc = q.slice(4);
-    if (!/^\d{5}$/.test(psc)) { await env.DB.prepare("INSERT OR REPLACE INTO geo (q,lat,lon,ok) VALUES (?,?,?,0)").bind(q, null, null).run(); return null; }
+    if (!/^\d{5}$/.test(psc)) return null;
     url = `https://nominatim.openstreetmap.org/search?postalcode=${psc}&country=cz&format=json&limit=1`;
   } else {
-    // "Řezáčova, Brno - Komín" → "Řezáčova, Brno"
-    const clean = q.replace(/\s*-\s*[^,]+$/, "").replace(/Brno\s*-\s*[^,]+/, "Brno");
+    const clean = q.replace(/Brno\s*-\s*[^,]+/, "Brno"); // "Řezáčova, Brno - Komín" → "Řezáčova, Brno"
     url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(clean)}&countrycodes=cz&format=json&limit=1`;
   }
   const res = await F(url, { headers: { "User-Agent": "byty-liskovec/1.0 (osobni hlidac pronajmu; byty-liskovec.vojtechs.workers.dev)" } });
   if (!res.ok) return undefined;
   const r = (await res.json())[0];
-  const ok = r ? 1 : 0;
-  await env.DB.prepare("INSERT OR REPLACE INTO geo (q,lat,lon,ok) VALUES (?,?,?,?)").bind(q, r ? +r.lat : null, r ? +r.lon : null, ok).run();
-  await new Promise((s) => setTimeout(s, 1100)); // Nominatim: max 1 dotaz za sekundu
+  await new Promise((ok) => setTimeout(ok, 1100)); // Nominatim: max 1 dotaz za sekundu
   return r ? { lat: +r.lat, lon: +r.lon } : null;
+}
+
+// doplní polohu položkám bez GPS; rozpočet se dělí: nejdřív hrubá poloha pro všechny, pak přesné ulice
+async function resolveGeo(env, F, items, known) {
+  const need = items.filter((l) => (l.lat == null || l.lon == null) && l.geoq);
+  const chains = need.map((l) => l.geoq.split("|").filter(Boolean));
+  const allQ = [...new Set(chains.flat())];
+  const cache = new Map();
+  for (let i = 0; i < allQ.length; i += 50) {
+    const part = allQ.slice(i, i + 50);
+    const { results } = await env.DB.prepare(`SELECT q, lat, lon, ok FROM geo WHERE q IN (${part.map(() => "?").join(",")})`).bind(...part).all();
+    for (const r of results) cache.set(r.q, r.ok ? { lat: r.lat, lon: r.lon } : null);
+  }
+  // pořadí dotazů do sítě: nejhrubší chybějící úroveň u položek bez polohy, pak přesnější úrovně
+  const wanted = [];
+  need.forEach((l, i) => {
+    const ch = chains[i], prev = known.get(l.id);
+    const hasAny = (prev && prev.lat != null) || ch.some((q) => cache.get(q));
+    if (!hasAny) { const q = [...ch].reverse().find((q) => !cache.has(q)); if (q) wanted.push([0, q]); }
+    const fine = ch.find((q) => !cache.has(q));
+    if (fine) wanted.push([1, fine]);
+  });
+  wanted.sort((a, b) => a[0] - b[0]);
+  const done = new Set(), writes = [];
+  for (const [, q] of wanted) {
+    if (done.has(q) || cache.has(q)) continue;
+    if (F.left() <= 6) break;
+    done.add(q);
+    const g = await geoLookup(F, q);
+    if (g === undefined) continue;
+    cache.set(q, g);
+    writes.push(env.DB.prepare("INSERT OR REPLACE INTO geo (q,lat,lon,ok) VALUES (?,?,?,?)").bind(q, g ? g.lat : null, g ? g.lon : null, g ? 1 : 0));
+  }
+  if (writes.length) await env.DB.batch(writes);
+  // přiřadit nejpřesnější známou polohu; approx 2 = zatím jen hrubá úroveň, zpřesní se příště
+  need.forEach((l, i) => {
+    const ch = chains[i];
+    for (let k = 0; k < ch.length; k++) {
+      const g = cache.get(ch[k]);
+      if (g) { l.lat = g.lat; l.lon = g.lon; l.approx = ch.slice(0, k).some((q) => !cache.has(q)) ? 2 : 1; return; }
+    }
+    const prev = known.get(l.id);
+    if (prev && prev.lat != null) { l.lat = prev.lat; l.lon = prev.lon; l.approx = prev.approx || 1; }
+  });
+  return done.size;
 }
 
 // ---------- sběr ----------
@@ -288,7 +317,7 @@ async function collect(env) {
   }
   // 2) Sreality: datum poslední úpravy z detailu – pár inzerátů za běh, nejbližší první
   try {
-    const { results: todo } = await env.DB.prepare("SELECT id FROM listings WHERE source='Sreality' AND posted_at IS NULL AND km IS NOT NULL ORDER BY first_seen DESC, km LIMIT ?").bind(Math.min(8, Math.max(0, F.left() - 20))).all();
+    const { results: todo } = await env.DB.prepare("SELECT id FROM listings WHERE source='Sreality' AND posted_at IS NULL AND km IS NOT NULL ORDER BY first_seen DESC, km LIMIT ?").bind(Math.min(6, Math.max(0, F.left() - 14))).all();
     const upd = [];
     for (const r of todo) {
       const res = await F("https://www.sreality.cz/api/v1/estates/" + r.id.replace("sreality-", ""), { headers: { "User-Agent": UA, Accept: "application/json" } });
@@ -303,28 +332,27 @@ async function collect(env) {
   } catch (e) { errors.push("Sreality datum: " + e.message); }
 
   // 3) poloha a vzdálenost
-  for (const [name, items] of got) {
-    let kept = 0;
-    for (const l of items) {
-      if (!l.price || l.price > MAX_PRICE_STORE || !l.disposition) continue;
-      if (l.lat == null || l.lon == null) {
-        const prev = known.get(l.id);
-        l.approx = 1;
-        if (prev && prev.lat != null && prev.approx !== 2) { l.lat = prev.lat; l.lon = prev.lon; }
-        else if (l.geoq) {
-          const g = await geocode(env, F, l.geoq);
-          if (g) { l.lat = g.lat; l.lon = g.lon; l.approx = g.level > 0 && g.pending ? 2 : 1; /* 2 = jen střed čtvrti, ulice se dohledá příště */ }
-          else if (prev && prev.lat != null) { l.lat = prev.lat; l.lon = prev.lon; l.approx = prev.approx; }
-        }
-      }
-      if (l.lat != null) {
-        l.km = Math.round(km(hLat, hLon, l.lat, l.lon) * 100) / 100;
-        if (l.km > MAX_KM_STORE) continue;
-      } else l.km = null; // poloha se dohledá při dalším běhu
-      all.push(l); kept++;
+  const pool = [];
+  for (const [, items] of got) for (const l of items) {
+    if (!l.price || l.price > MAX_PRICE_STORE || !l.disposition) continue;
+    if (l.lat == null || l.lon == null) {
+      const prev = known.get(l.id);
+      // už známá přesná poloha → nemusíme znovu dohledávat
+      if (prev && prev.lat != null && prev.approx !== 2) { l.lat = prev.lat; l.lon = prev.lon; l.approx = prev.approx || 1; }
     }
-    stats[name].kept = kept;
+    pool.push(l);
   }
+  try { stats.geocoded = await resolveGeo(env, F, pool, known); } catch (e) { errors.push("Poloha: " + e.message); }
+  const keptBy = {};
+  for (const l of pool) {
+    if (l.lat != null && l.lon != null) {
+      l.km = Math.round(km(hLat, hLon, l.lat, l.lon) * 100) / 100;
+      if (l.km > MAX_KM_STORE) continue;
+    } else l.km = null; // poloha se dohledá při dalším běhu
+    all.push(l);
+    keptBy[l.source] = (keptBy[l.source] || 0) + 1;
+  }
+  for (const [name] of got) stats[name].kept = keptBy[name] || 0;
 
   const stmt = env.DB.prepare(`INSERT INTO listings (id,source,title,price,disposition,area,locality,lat,lon,km,url,image,first_seen,last_seen,posted_at,posted_kind,approx,geoq)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
