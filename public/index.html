@@ -37,15 +37,24 @@ svg.lucide{width:18px;height:18px;stroke-width:1.75;flex:none}
 .top::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,var(--line) 10%,var(--line) 90%,transparent);opacity:0;transition:opacity .2s}
 .top.scrolled::after{opacity:1}
 .bar{display:flex;align-items:center;gap:12px;height:64px}
-.brand{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:0}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:0;flex:1 1 auto}
 .logo{width:34px;height:34px;border-radius:10px;background:var(--ink);color:#fff;display:grid;place-items:center}
 .logo svg{width:17px;height:17px}
-.brand b{font-size:16px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
-.live{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:99px;background:var(--surface);color:var(--ink2);font-size:13px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
+.brand b{font-size:16px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.logo{flex:none}
+.live{flex:none;cursor:pointer;transition:background .15s;display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:99px;background:var(--surface);color:var(--ink2);font-size:13px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
 .live i{width:7px;height:7px;border-radius:50%;background:var(--green);position:relative}
 .live i::after{content:"";position:absolute;inset:-4px;border-radius:50%;background:var(--green);opacity:.35;animation:pulse 2s infinite}
 @keyframes pulse{0%{transform:scale(.4);opacity:.5}100%{transform:scale(1.6);opacity:0}}
+.live:hover{background:var(--surface2)}
 .live.off i{background:var(--mute)}.live.off i::after{display:none}
+.live.busy i{background:var(--blue)}.live.busy i::after{background:var(--blue)}
+.pop2{position:absolute;right:0;top:44px;width:270px;background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:14px;display:grid;gap:10px;z-index:30;transform-origin:top right;animation:menu .18s var(--ease)}
+.pop2 .r{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;color:var(--mute)}
+.pop2 .r b{color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+.pop2 .btn{width:100%}
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 .icon-btn{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;border:1px solid var(--line);background:#fff;transition:background .15s,transform .15s}
 .icon-btn:hover{background:var(--surface)}
 .icon-btn:active,.btn:active,.seg button:active,.opt:active,.store:active{transform:scale(.96)}
@@ -144,7 +153,16 @@ input[type=range]{width:100%;accent-color:var(--blue);height:26px;margin:0}
 .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:12px 16px 0;padding:11px 0 14px;font-size:12.5px;color:var(--mute);position:relative;font-variant-numeric:tabular-nums;margin-top:auto}
 .body+.meta{margin-top:12px}
 .meta::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--line) 10px,var(--line) calc(100% - 10px),transparent)}
-.meta span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.meta span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.onmap{display:inline-flex;align-items:center;gap:5px;height:28px;margin:-6px -8px -6px 0;padding:0 8px;border-radius:8px;color:var(--ink2);font-weight:500;white-space:nowrap;transition:background .15s,color .15s}
+.onmap:hover{background:var(--blueSoft);color:var(--blue)}
+.onmap svg{width:14px;height:14px}
+.badge.gone{background:var(--ink2)}
+.srcb{position:absolute;z-index:2;left:12px;bottom:12px;height:22px;padding:1px 8px 0;border-radius:7px;font-size:11.5px;font-weight:600;line-height:1;display:inline-flex;align-items:center;background:rgba(255,255,255,.88);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:var(--ink2)}
+.also{font-size:12.5px;color:var(--mute);display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.also a{color:var(--blue);text-decoration:none;font-weight:500}
+.also a:hover{text-decoration:underline}
+.card.inactive .photo img{filter:grayscale(1);opacity:.7}
 
 /* seznam */
 .grid.list{grid-template-columns:1fr;gap:10px}
@@ -161,9 +179,11 @@ input[type=range]{width:100%;accent-color:var(--blue);height:26px;margin:0}
   .grid.list .fav{width:30px;height:30px;top:8px;right:8px}
   .grid.list .fav svg{width:15px;height:15px}
   .grid.list .badge{left:8px;top:8px;height:22px;font-size:11px}
+  .grid.list .srcb{display:none}
   .hero .seg.big button span{display:none}
   .live .lt{display:none}
 }
+@media (max-width:420px){.brand b{display:none}.bar{gap:8px}}
 .empty{grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--mute);animation:fade .3s}
 .empty .ico{width:56px;height:56px;border-radius:16px;background:var(--surface);display:grid;place-items:center;margin:0 auto 14px;color:var(--ink2)}
 .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}
@@ -186,6 +206,9 @@ input[type=range]{width:100%;accent-color:var(--blue);height:26px;margin:0}
 .pin:hover{transform:translate(-50%,-50%) scale(1.1)}
 .pin.new{background:var(--blue);color:#fff;border-color:var(--blue)}
 .pin.fv{border-color:var(--red);color:var(--red)}
+.pin.pulse{position:relative;background:var(--ink);color:#fff;border-color:var(--ink);z-index:2}
+.pin.pulse::after{content:"";position:absolute;inset:-3px;border-radius:99px;border:2px solid var(--ink);animation:ring 1.4s var(--ease) infinite}
+@keyframes ring{from{opacity:.8;transform:scale(1)}to{opacity:0;transform:scale(1.7)}}
 .leaflet-popup-content-wrapper{border-radius:16px;padding:0;overflow:hidden;box-shadow:var(--shadow)}
 .leaflet-popup-content{margin:0;width:240px!important;font-size:14px}
 .pop img{width:100%;height:130px;object-fit:cover;display:block;background:var(--surface)}
@@ -251,11 +274,19 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 <header class="top" id="top">
   <div class="wrap bar">
     <div class="brand"><div class="logo"><i data-lucide="house"></i></div><b>Byty Lískovec</b></div>
-    <div class="live off" id="live" title="Nové inzeráty se kontrolují každých 20 minut"><i></i><span><span class="lt">Aktualizováno </span><span id="updated">…</span></span></div>
+    <div style="position:relative;flex:none">
+      <button class="live off" id="live" aria-label="Stav aktualizace"><i></i><span><span class="lt">Aktualizováno </span><span id="updated">…</span></span></button>
+      <div class="pop2" id="livePop" hidden>
+        <div class="r"><span>Poslední kontrola</span><b id="lpLast">–</b></div>
+        <div class="r"><span>Další automaticky</span><b id="lpNext">–</b></div>
+        <div class="r"><span>Bytů v databázi</span><b id="lpCount">–</b></div>
+        <button class="btn primary" id="lpBtn"><i data-lucide="refresh-cw"></i>Aktualizovat byty</button>
+      </div>
+    </div>
     <div style="position:relative">
       <button class="icon-btn" id="menuBtn" aria-label="Menu"><i data-lucide="menu"></i></button>
       <div class="menu" id="menu" hidden>
-        <button id="mRefresh"><i data-lucide="refresh-cw"></i>Hledat nové byty teď</button>
+        <button id="mRefresh"><i data-lucide="refresh-cw"></i>Aktualizovat byty</button>
         <button id="mInstall"><i data-lucide="smartphone"></i>Přidat na plochu</button>
         <button id="mNotify"><i data-lucide="bell"></i>Upozornění na mobil</button>
         <div class="info" id="mInfo"></div>
@@ -301,6 +332,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
           <div class="seg" id="fLoc"><button data-loc="area"><i data-lucide="pentagon"></i>Moje oblast</button><button data-loc="km"><i data-lucide="navigation"></i>Od práce</button></div>
           <div id="kmBox" hidden><input type="range" id="fKm" min="0.5" max="8" step="0.5" aria-label="Vzdálenost od práce"><div class="scale"><span>do <b id="fKmV" style="color:var(--ink)"></b> vzdušnou čarou</span></div></div>
         </div>
+        <div class="fgrp"><h3>Weby</h3><div class="opts" id="fSrc"></div></div>
       </div>
       <div class="ffoot"><div class="res">Zobrazeno <b id="fRes"></b></div><div id="resetBox"></div></div>
     </section>
@@ -373,9 +405,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 const DISPS=["1+kk","1+1","2+kk","2+1","3+kk","3+1"];
 const WORK=[49.17165,16.56547];
 const DEFAULT_AREA=[[49.1840,16.5560],[49.1835,16.5790],[49.1770,16.5960],[49.1480,16.6110],[49.1330,16.6060],[49.1500,16.5560],[49.1640,16.5420]];
-const DEFAULTS={disp:["1+1","2+kk","2+1","3+kk"],price:20000,area:0,km:4,loc:"area",sort:"new",view:"grid",tab:"all"};
+const SOURCES=["Sreality","Bezrealitky","UlovDomov","iDNES Reality","Bazoš"];
+const DEFAULTS={off:[],disp:["1+1","2+kk","2+1","3+kk"],price:20000,area:0,km:4,loc:"area",sort:"new",view:"grid",tab:"all"};
 const store={get(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
-let S=Object.assign({},DEFAULTS,store.get("s3",{}));
+let S=Object.assign({},DEFAULTS,store.get("s3",{}));if(!Array.isArray(S.off))S.off=[];
 let AREA=store.get("area",DEFAULT_AREA);
 let favs=new Set(store.get("favs",[]));
 let data=[],lastRun=null,knownIds=null,lastKey="";
@@ -385,7 +418,19 @@ const kc=n=>n.toLocaleString("cs-CZ")+" Kč";
 const num=n=>String(n).replace(".",",");
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const save=()=>store.set("s3",S);
-const isNew=x=>Date.now()-x.first_seen<24*3600e3;
+let firstRun={};
+const fr=x=>firstRun[x.source]||0;
+// nové = objevil se za posledních 24 h; inzeráty z prvního načtení zdroje se za nové nepočítají
+const isNew=x=>Date.now()-x.first_seen<24*3600e3&&x.first_seen-fr(x)>30*6e4;
+const day=t=>new Date(t).toLocaleDateString("cs-CZ",{day:"numeric",month:"numeric"});
+const kmTxt=x=>(x.approx?"~":"")+num(x.km)+" km";
+const active=x=>x.active!==false;
+function dateLine(x){
+  if(x.posted_at&&x.posted_kind==="edited")return{t:"Upraveno "+(Date.now()-x.posted_at<2*864e5?when(x.posted_at).replace(/ \d+:\d+$/,""):day(x.posted_at)),h:"Kdy byl inzerát naposledy upraven na "+x.source};
+  if(x.posted_at)return{t:"Zveřejněno "+(x.source==="Bazoš"?day(x.posted_at):when(x.posted_at)),h:"Kdy byl inzerát zveřejněn na "+x.source};
+  if(x.first_seen-fr(x)<=30*6e4)return{t:"Nalezeno "+when(x.first_seen),h:"Inzerát byl na "+x.source+" už při spuštění aplikace"};
+  return{t:"Přidáno "+when(x.first_seen),h:"Kdy se inzerát objevil na "+x.source};
+}
 const plural=(n,a,b,c)=>n===1?a:n>1&&n<5?b:c;
 
 function inPoly(lat,lon,poly){let c=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const [yi,xi]=poly[i],[yj,xj]=poly[j];if(((yi>lat)!==(yj>lat))&&(lon<(xj-xi)*(lat-yi)/(yj-yi)+xi))c=!c}return c}
@@ -406,7 +451,7 @@ function segsAll(){segSet($("view"),"view",S.view);segSet($("tabs"),"tab",S.tab)
 
 // filtrování
 const inLoc=x=>S.loc==="area"?inPoly(x.lat,x.lon,AREA):x.km<=S.km;
-function base(){return data.filter(x=>x.price&&S.disp.includes(x.disposition)&&x.price<=S.price&&(!S.area||x.area>=S.area)&&inLoc(x))}
+function base(){return data.filter(x=>active(x)&&!x.dup&&!S.off.includes(x.source)&&x.price&&S.disp.includes(x.disposition)&&x.price<=S.price&&(!S.area||x.area>=S.area)&&inLoc(x))}
 function current(){
   const b=base();
   const l=S.tab==="fav"?data.filter(x=>favs.has(x.id)):S.tab==="new"?b.filter(isNew):b;
@@ -436,33 +481,61 @@ function render(animate=true){
 }
 function card(x,i){
   const url=esc(x.url);
-  return `<article class="card" style="${i<0?"animation:none":"--i:"+i}">
+  const dl=dateLine(x);
+  return `<article class="card${active(x)?"":" inactive"}" style="${i<0?"animation:none":"--i:"+i}">
   <a class="photo" href="${url}" target="_blank" rel="noopener" aria-label="Otevřít inzerát">
     <div class="ph"><i data-lucide="image"></i></div>
     ${x.image?`<img src="${esc(x.image)}" alt="" loading="lazy" onerror="this.remove()">`:""}
-    ${isNew(x)?'<span class="badge">Nové</span>':""}
+    ${!active(x)?'<span class="badge gone">Stažený inzerát</span>':isNew(x)?'<span class="badge">Nové</span>':""}
+    <span class="srcb">${esc(x.source)}${x.also?.length?" +"+x.also.length:""}</span>
   </a>
   <button class="fav ${favs.has(x.id)?"on":""}" data-fav="${esc(x.id)}" aria-label="Oblíbené" aria-pressed="${favs.has(x.id)}"><i data-lucide="heart"></i></button>
-  <a class="cbody" href="${url}" target="_blank" rel="noopener">
-    <div class="body">
+  <div class="cbody">
+    <a class="body" href="${url}" target="_blank" rel="noopener">
       <div class="row1"><div class="price">${kc(x.price)} <small>/ měs.</small></div>${x.area?`<div class="ppm">${Math.round(x.price/x.area)} Kč/m²</div>`:""}</div>
       <div class="kind">Byt ${esc(x.disposition)}${x.area?`, ${x.area} m²`:""}</div>
       <div class="addr"><i data-lucide="map-pin"></i><span>${esc(x.locality)}</span></div>
-    </div>
-    <div class="meta"><span><i data-lucide="clock-3"></i>${when(x.first_seen)}</span><span><i data-lucide="navigation"></i>${num(x.km)} km od práce</span></div>
-  </a></article>`}
+    </a>
+    ${x.also?.length?`<div class="also" style="padding:6px 16px 0">Také na ${x.also.map(a=>`<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.source)}</a>`).join(", ")}</div>`:""}
+    <div class="meta"><span title="${esc(dl.h)}"><i data-lucide="clock-3"></i>${dl.t}</span><button class="onmap" data-map="${esc(x.id)}" title="Ukázat na mapě"><i data-lucide="map-pin"></i>${kmTxt(x)} · mapa</button></div>
+  </div></article>`}
 
+// stejný byt na více webech → jedna karta (stejná dispozice, cena, plocha a poloha do ~400 m)
+const PRIO={Sreality:0,Bezrealitky:1,UlovDomov:2,"iDNES Reality":3,"Bazoš":4};
+function dedupe(list){
+  const sorted=[...list].sort((a,b)=>(a.approx-b.approx)||((PRIO[a.source]??9)-(PRIO[b.source]??9)));
+  const keep=[];
+  for(const x of sorted){
+    x.also=[];x.dup=false;
+    const m=active(x)&&keep.find(k=>active(k)&&k.source!==x.source&&k.disposition===x.disposition&&Math.abs(k.price-x.price)<=300&&(!k.area||!x.area||Math.abs(k.area-x.area)<=2)&&Math.abs(k.km-x.km)<(k.approx||x.approx?1.2:.4));
+    if(m){if(!m.also.some(a=>a.source===x.source))m.also.push({source:x.source,url:x.url});x.dup=true}
+    keep.push(x);
+  }
+  return list;
+}
 // data
 async function load(silent){
   try{
     const j=await fetch("/api/listings",{cache:"no-store"}).then(r=>r.json());
     if(knownIds&&silent){const add=j.listings.filter(x=>!knownIds.has(x.id)).length;if(add)toast(`${add} ${plural(add,"nový byt","nové byty","nových bytů")}`,"sparkles")}
-    knownIds=new Set(j.listings.map(x=>x.id));data=j.listings;lastRun=j.lastRun;
-    tick();$("mInfo").textContent=`${data.length} bytů v databázi · kontrola každých 20 min`;
+    knownIds=new Set(j.listings.map(x=>x.id));data=dedupe(j.listings);lastRun=j.lastRun;firstRun=j.firstRun||{};
+    fillFilters();tick();$("mInfo").textContent=`${data.length} bytů v databázi · kontrola každých 20 min`;
     render(!silent);
-  }catch{$("updated").textContent="bez připojení";$("live").classList.add("off")}
+  }catch{if(!busy){$("updated").textContent="bez připojení";$("live").classList.add("off")}}
 }
-function tick(){if(!lastRun)return;$("updated").textContent=when(lastRun);$("live").classList.toggle("off",Date.now()-lastRun>45*6e4)}
+function tick(){if(!lastRun||busy)return;$("updated").textContent=when(lastRun);$("live").classList.toggle("off",Date.now()-lastRun>45*6e4);
+  const n=new Date();const next=new Date(n);next.setSeconds(0,0);next.setMinutes(Math.ceil((n.getMinutes()+1)/20)*20);
+  $("lpLast").textContent=new Date(lastRun).toLocaleString("cs-CZ",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"});
+  $("lpNext").textContent=`za ${Math.max(1,Math.round((next-n)/6e4))} min`;$("lpCount").textContent=data.filter(active).length}
+let busy=false;
+async function refreshNow(quiet){
+  if(busy)return;busy=true;$("live").classList.add("busy");$("live").classList.remove("off");$("updated").textContent="aktualizuji…";
+  const b=$("lpBtn");b.disabled=true;b.innerHTML='<i data-lucide="refresh-cw" class="spin"></i>Aktualizuji…';icons();
+  let r=null;try{r=await fetch("/api/refresh",{method:"POST"}).then(r=>r.json())}catch{}
+  busy=false;$("live").classList.remove("busy");b.disabled=false;b.innerHTML='<i data-lucide="refresh-cw"></i>Aktualizovat byty';icons();
+  await load(true);
+  if(!quiet){toast(!r?"Aktualizace se nepovedla, zkus to znovu":r.skipped?"Aktualizováno před chvílí, data jsou čerstvá":r.new?`Hotovo · ${r.new} ${plural(r.new,"nový byt","nové byty","nových bytů")}`:"Hotovo · žádné nové byty",r?"check":"circle-alert")}
+}
 
 // ovládání
 $("view").onclick=e=>{const b=e.target.closest("button");if(b&&S.view!==b.dataset.view){S.view=b.dataset.view;if(S.view!=="map")editing=false;render()}};
@@ -475,7 +548,14 @@ function toggleFav(id,btn){
   $("nFav").textContent=data.filter(x=>favs.has(x.id)).length;
   if(S.tab==="fav")setTimeout(()=>render(),250);
 }
-$("list").onclick=e=>{const b=e.target.closest("[data-fav]");if(!b)return;e.preventDefault();toggleFav(b.dataset.fav,b)};
+$("list").onclick=e=>{const m=e.target.closest("[data-map]");if(m){e.preventDefault();focusOnMap(m.dataset.map);return}
+  const b=e.target.closest("[data-fav]");if(!b)return;e.preventDefault();toggleFav(b.dataset.fav,b)};
+let focusId=null;
+function focusOnMap(id){
+  const x=data.find(d=>d.id===id);if(!x)return;
+  focusId=id;S.view="map";render();scrollTo({top:Math.max(0,$("content").offsetTop-90),behavior:"smooth"});
+  setTimeout(()=>{map.invalidateSize();map.flyTo([x.lat,x.lon],16,{duration:.9});map.once("moveend",()=>{const mk=markers[id];if(mk)mk.openPopup()})},120);
+}
 addEventListener("scroll",()=>$("top").classList.toggle("scrolled",scrollY>4),{passive:true});
 addEventListener("resize",segsAll);
 
@@ -489,9 +569,11 @@ function fillFilters(){
   $("fArea").value=S.area;$("fAreaV").textContent=S.area?S.area+" m²":"—";
   $("fKm").value=S.km;$("fKmV").textContent=num(S.km)+" km";
   $("kmBox").hidden=S.loc!=="km";
+  $("fSrc").innerHTML=SOURCES.map(w=>{const on=!S.off.includes(w);const n=data.filter(x=>x.source===w&&active(x)).length;return `<button class="opt ${on?"on":""}" data-w="${w}">${on?'<i data-lucide="check"></i>':""}${w}<span style="opacity:.6;font-weight:400">${n||""}</span></button>`}).join("");
   icons();
 }
 $("fDisp").onclick=e=>{const b=e.target.closest("[data-d]");if(!b)return;const d=b.dataset.d;S.disp=S.disp.includes(d)?S.disp.filter(x=>x!==d):[...S.disp,d];fillFilters();render()};
+$("fSrc").onclick=e=>{const b=e.target.closest("[data-w]");if(!b)return;const w=b.dataset.w;S.off=S.off.includes(w)?S.off.filter(x=>x!==w):[...S.off,w];fillFilters();render()};
 $("fPrice").oninput=e=>{S.price=+e.target.value;$("fPriceV").textContent=kc(S.price);render()};
 $("fArea").oninput=e=>{S.area=+e.target.value;$("fAreaV").textContent=S.area?S.area+" m²":"—";render()};
 $("fKm").oninput=e=>{S.km=+e.target.value;$("fKmV").textContent=num(S.km)+" km";render()};
@@ -509,7 +591,10 @@ function resetUI(confirm){
 // menu a modální okna
 $("menuBtn").onclick=e=>{e.stopPropagation();$("menu").hidden=!$("menu").hidden;icons()};
 document.addEventListener("click",e=>{if(!e.target.closest("#menu"))$("menu").hidden=true});
-$("mRefresh").onclick=async()=>{$("menu").hidden=true;toast("Hledám nové byty…","refresh-cw");try{const r=await fetch("/api/refresh",{method:"POST"}).then(r=>r.json());await load();toast(r.skipped?"Hledalo se před chvílí, zkus to za pár minut":`Hotovo · ${r.new} ${plural(r.new,"nový byt","nové byty","nových bytů")}`,"check")}catch{toast("Nepodařilo se, zkus to znovu","circle-alert")}};
+$("mRefresh").onclick=()=>{$("menu").hidden=true;refreshNow()};
+$("live").onclick=e=>{e.stopPropagation();$("menu").hidden=true;tick();$("livePop").hidden=!$("livePop").hidden;icons()};
+$("lpBtn").onclick=()=>{$("livePop").hidden=true;refreshNow()};
+document.addEventListener("click",e=>{if(!e.target.closest("#livePop"))$("livePop").hidden=true});
 let openModal=null;
 function modal(id){openModal=$(id);openModal.classList.add("open");$("scrim").classList.add("open");$("menu").hidden=true;icons()}
 function closeModal(){if(!openModal)return;openModal.classList.remove("open");$("scrim").classList.remove("open");openModal=null}
@@ -524,7 +609,7 @@ addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPrompt=e;$
 $("pwaInstall").onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;$("pwaInstall").hidden=true;closeModal()};
 
 // mapa
-let map,poly,circle,vtxLayer,pinLayer,editing=false,fitted=false;
+let map,poly,circle,vtxLayer,pinLayer,editing=false,fitted=false,markers={};
 function initMap(){
   if(map){setTimeout(()=>map.invalidateSize(),50);return}
   map=L.map("map",{zoomControl:false}).setView([49.163,16.58],13);
@@ -536,22 +621,26 @@ function initMap(){
   L.marker(WORK,{zIndexOffset:1000,icon:L.divIcon({className:"",html:'<div class="work"><i data-lucide="briefcase-medical"></i></div>',iconSize:[30,30],iconAnchor:[15,15]})}).addTo(map).bindTooltip("Práce · Domov pro seniory Mikuláškovo nám.");
   map.on("click",e=>{if(!editing)return;let best=0,bd=1e9;for(let i=0;i<AREA.length;i++){const d=segDist(e.latlng,AREA[i],AREA[(i+1)%AREA.length]);if(d<bd){bd=d;best=i}}AREA.splice(best+1,0,[e.latlng.lat,e.latlng.lng]);drawMap()});
   map.on("popupopen",icons);
-  setTimeout(()=>{map.invalidateSize();if(!fitted){map.fitBounds(poly.getBounds(),{padding:[50,50]});fitted=true}},60);
+  map.on("popupclose",()=>{if(focusId){focusId=null;setTimeout(drawMap,10)}});
+  setTimeout(()=>{map.invalidateSize();if(!fitted&&!focusId){map.fitBounds(poly.getBounds(),{padding:[50,50]})}fitted=true},60);
 }
 function segDist(p,a,b){const x=p.lng,y=p.lat,x1=a[1],y1=a[0],x2=b[1],y2=b[0];const dx=x2-x1,dy=y2-y1;let t=((x-x1)*dx+(y-y1)*dy)/(dx*dx+dy*dy||1);t=Math.max(0,Math.min(1,t));return Math.hypot(x-(x1+t*dx),y-(y1+t*dy))}
 function popup(x){return `<div class="pop">${x.image?`<img src="${esc(x.image)}" alt="">`:""}<div class="pb">
   <div class="row1"><div class="price">${kc(x.price)}</div><button class="fav ${favs.has(x.id)?"on":""}" data-fav="${esc(x.id)}" style="position:static;width:32px;height:32px;box-shadow:none;background:var(--surface)"><i data-lucide="heart"></i></button></div>
   <div class="kind">Byt ${esc(x.disposition)}${x.area?`, ${x.area} m²`:""}</div><div class="addr"><span>${esc(x.locality)}</span></div>
-  <div class="addr"><span>${when(x.first_seen)} · ${num(x.km)} km od práce</span></div>
+  <div class="addr"><span>${dateLine(x).t} · ${kmTxt(x)} od práce</span></div>
+  <div class="addr"><span>${esc(x.source)}${x.approx?" · přibližná poloha":""}${x.also?.length?" · také "+x.also.map(a=>esc(a.source)).join(", "):""}</span></div>
   <a class="btn primary" href="${esc(x.url)}" target="_blank" rel="noopener">Otevřít inzerát<i data-lucide="arrow-up-right"></i></a></div></div>`}
 function drawMap(){
   if(!map)return;
   const area=S.loc==="area"||editing;
   poly.setLatLngs(AREA);
   if(area){if(!map.hasLayer(poly))poly.addTo(map);map.removeLayer(circle)}else{map.removeLayer(poly);circle.setRadius(S.km*1000).addTo(map)}
-  pinLayer.clearLayers();vtxLayer.clearLayers();
-  current().l.forEach(x=>{
-    L.marker([x.lat,x.lon],{icon:L.divIcon({className:"",html:`<span class="pin ${isNew(x)?"new":""} ${favs.has(x.id)?"fv":""}">${Math.round(x.price/1000)}k</span>`,iconSize:[0,0]})})
+  pinLayer.clearLayers();vtxLayer.clearLayers();markers={};
+  const list=current().l;const fx=focusId&&data.find(d=>d.id===focusId);
+  if(fx&&!list.includes(fx))list.push(fx);
+  list.forEach(x=>{
+    markers[x.id]=L.marker([x.lat,x.lon],{zIndexOffset:x.id===focusId?900:0,icon:L.divIcon({className:"",html:`<span class="pin ${isNew(x)?"new":""} ${favs.has(x.id)?"fv":""} ${x.id===focusId?"pulse":""}">${Math.round(x.price/1000)}k</span>`,iconSize:[0,0]})})
       .addTo(pinLayer).bindPopup(()=>popup(x),{closeButton:false,offset:[0,-8]});
   });
   renderTools();
@@ -583,7 +672,8 @@ function setEdit(on){editing=on;if(map){map.closePopup();drawMap()}}
 document.addEventListener("click",e=>{const b=e.target.closest(".leaflet-popup [data-fav]");if(b){e.preventDefault();toggleFav(b.dataset.fav,b);drawMap()}});
 
 // start
-fillFilters();resetUI(false);setF(fOpen);icons();render();load();
+fillFilters();resetUI(false);setF(fOpen);icons();render();
+load().then(()=>{if(!lastRun||Date.now()-lastRun>5*6e4)refreshNow(true)});
 setInterval(()=>load(true),60000);setInterval(tick,20000);
 document.fonts&&document.fonts.ready.then(segsAll);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load(true)});

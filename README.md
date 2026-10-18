@@ -21,4 +21,6 @@ Nebo přes Git: pushni složku na GitHub a v Cloudflare → Workers → Import f
 - Kontrola každých 20 minut (`crons`)
 
 ## Zdroje
-Teď: Sreality. Další (Bezrealitky, iDNES, UlovDomov, Bazoš) se přidávají jako funkce do pole `SOURCES` v `src/index.js`.
+Sreality, Bezrealitky, UlovDomov (API s GPS), iDNES Reality a Bazoš (HTML, poloha se dohledává přes Nominatim a ukládá do tabulky `geo`).
+Další zdroj = nová funkce v poli `SOURCES` v `src/index.js`. Statistiky posledního běhu jsou v tabulce `meta` pod klíčem `last_stats`.
+Stejný byt z více webů aplikace sloučí do jedné karty („Také na …“).
