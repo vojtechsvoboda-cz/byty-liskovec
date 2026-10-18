@@ -108,6 +108,14 @@ export default {
       const meta = await env.DB.prepare("SELECT v FROM meta WHERE k='last_run'").first();
       return Response.json({ listings: results, lastRun: meta ? Number(meta.v) : null, home: [env.HOME_LAT, env.HOME_LON] });
     }
+    if (url.pathname === "/api/_dbg") {
+      const r = await fetch("https://www.sreality.cz/api/v1/estates/" + url.searchParams.get("id"), { headers: { "User-Agent": UA, Accept: "application/json" } });
+      const j = await r.json();
+      const pick = {};
+      const walk = (o, p) => { for (const [k, v] of Object.entries(o || {})) { if (v && typeof v === "object" && !Array.isArray(v)) walk(v, p + k + "."); else if (/date|since|edit|creat|updat|publi|insert|time|age|stamp/i.test(k)) pick[p + k] = v; } };
+      walk(j, "");
+      return Response.json({ status: r.status, keys: Object.keys(j), pick });
+    }
     if (url.pathname === "/api/refresh" && req.method === "POST") {
       const last = await env.DB.prepare("SELECT v FROM meta WHERE k='last_run'").first();
       if (last && Date.now() - Number(last.v) < 3 * 60 * 1000) return Response.json({ skipped: true });
