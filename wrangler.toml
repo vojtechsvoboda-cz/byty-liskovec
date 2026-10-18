@@ -8,7 +8,7 @@ directory = "./public"
 [[d1_databases]]
 binding = "DB"
 database_name = "byty-brno"
-database_id = "DOPLNIT_PO_VYTVORENI_DB"
+database_id = "4dfb9944-afc9-4331-a50f-e33880f4cbb2"
 
 # kontrola nových inzerátů každých 20 minut
 [triggers]
@@ -19,7 +19,7 @@ crons = ["*/20 * * * *"]
 HOME_LAT = "49.17165"
 HOME_LON = "16.56547"
 # notifikace: téma v aplikaci ntfy (vymysli si unikátní název, např. byty-teta-x7k2)
-NTFY_TOPIC = ""
+NTFY_TOPIC = "byty-liskovec-k7q3"
 # co je "zajímavé" pro notifikaci
 NOTIFY_MAX_PRICE = "20000"
 NOTIFY_MAX_KM = "4"
