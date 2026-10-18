@@ -286,7 +286,23 @@ async function collect(env) {
       stats[name] = { error: String(e.message || e), ms: Date.now() - t0 };
     }
   }
-  // 2) poloha a vzdálenost
+  // 2) Sreality: datum poslední úpravy z detailu – pár inzerátů za běh, nejbližší první
+  try {
+    const { results: todo } = await env.DB.prepare("SELECT id FROM listings WHERE source='Sreality' AND posted_at IS NULL AND km IS NOT NULL ORDER BY first_seen DESC, km LIMIT ?").bind(Math.min(8, Math.max(0, F.left() - 20))).all();
+    const upd = [];
+    for (const r of todo) {
+      const res = await F("https://www.sreality.cz/api/v1/estates/" + r.id.replace("sreality-", ""), { headers: { "User-Agent": UA, Accept: "application/json" } });
+      if (res.status === 404 || res.status === 410) { upd.push(env.DB.prepare("UPDATE listings SET posted_at=0 WHERE id=?").bind(r.id)); continue; }
+      if (!res.ok) continue;
+      const ed = (await res.json())?.result?.edited;
+      const t = ed ? Date.parse(ed + "T12:00:00+02:00") : NaN;
+      upd.push(env.DB.prepare("UPDATE listings SET posted_at=?, posted_kind='edited' WHERE id=?").bind(Number.isFinite(t) ? t : 0, r.id));
+    }
+    if (upd.length) await env.DB.batch(upd);
+    stats.srealityDates = upd.length;
+  } catch (e) { errors.push("Sreality datum: " + e.message); }
+
+  // 3) poloha a vzdálenost
   for (const [name, items] of got) {
     let kept = 0;
     for (const l of items) {
@@ -319,27 +335,9 @@ async function collect(env) {
   const stmts = all.map((l) => {
     if (!known.has(l.id)) fresh.push(l);
     return stmt.bind(l.id, l.source, l.title, l.price, l.disposition, l.area || 0, l.locality, l.lat ?? null, l.lon ?? null, l.km ?? null,
-      l.url, l.image, now, now, l.posted_at ?? null, l.posted_at ? l.posted_kind : null, l.approx ? 1 : 0, l.geoq ?? null);
+      l.url, l.image, now, now, l.posted_at ?? null, l.posted_at ? l.posted_kind : null, l.approx || 0, l.geoq ?? null);
   });
   for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
-
-  // Sreality: datum poslední úpravy z detailu, postupně v rámci zbylého rozpočtu
-  try {
-    const n = Math.max(0, F.left() - 6);
-    if (n) {
-      const { results: todo } = await env.DB.prepare("SELECT id FROM listings WHERE source='Sreality' AND posted_at IS NULL AND km IS NOT NULL AND last_seen=? ORDER BY km LIMIT ?").bind(now, n).all();
-      const upd = [];
-      for (const r of todo) {
-        const res = await F("https://www.sreality.cz/api/v1/estates/" + r.id.replace("sreality-", ""), { headers: { "User-Agent": UA, Accept: "application/json" } });
-        if (!res.ok) continue;
-        const ed = (await res.json())?.result?.edited;
-        const t = ed ? Date.parse(ed + "T12:00:00+02:00") : NaN;
-        upd.push(env.DB.prepare("UPDATE listings SET posted_at=?, posted_kind='edited' WHERE id=?").bind(Number.isFinite(t) ? t : 0, r.id));
-      }
-      if (upd.length) await env.DB.batch(upd);
-      stats.srealityDates = upd.length;
-    }
-  } catch (e) { errors.push("Sreality datum: " + e.message); }
 
   metaSet.push(["last_run", String(now)], ["last_errors", JSON.stringify(errors)], ["last_stats", JSON.stringify({ ...stats, subrequests: F.count })]);
   await env.DB.batch(metaSet.map(([k, v]) => env.DB.prepare("INSERT OR REPLACE INTO meta (k,v) VALUES (?,?)").bind(k, v)));
