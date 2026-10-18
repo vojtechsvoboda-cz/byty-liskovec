@@ -10,6 +10,8 @@ const BROWSER = {
 const MAX_KM_STORE = 8;      // ukládáme vše do 8 km od práce, jemné filtrování dělá aplikace
 const MAX_PRICE_STORE = 30000;
 const SUBREQ_BUDGET = 45;    // bezplatný Workers plán povoluje 50 podpožadavků na jedno spuštění
+// D1 free = 100k zapsaných řádků/den pro celý účet → nezměněné inzeráty zapisujeme jen jednou za SEEN_REFRESH
+const SEEN_REFRESH = 3 * 3600 * 1000;
 
 // ---------- pomocné ----------
 function km(lat1, lon1, lat2, lon2) {
@@ -296,7 +298,7 @@ async function collect(env) {
   const hLat = parseFloat(env.HOME_LAT), hLon = parseFloat(env.HOME_LON);
   const metaRows = (await env.DB.prepare("SELECT k, v FROM meta").all()).results;
   const meta = Object.fromEntries(metaRows.map((r) => [r.k, r.v]));
-  const { results: ex } = await env.DB.prepare("SELECT id, lat, lon, approx FROM listings").all();
+  const { results: ex } = await env.DB.prepare("SELECT id, lat, lon, approx, price, title, url, image, locality, area, km, posted_at, last_seen FROM listings").all();
   const known = new Map(ex.map((r) => [r.id, r]));
   const stats = {}, errors = [], fresh = [], all = [], metaSet = [];
 
@@ -360,8 +362,17 @@ async function collect(env) {
       locality=excluded.locality, title=excluded.title, area=excluded.area,
       lat=COALESCE(excluded.lat, listings.lat), lon=COALESCE(excluded.lon, listings.lon), km=COALESCE(excluded.km, listings.km), approx=excluded.approx,
       posted_at=COALESCE(excluded.posted_at, listings.posted_at), posted_kind=COALESCE(excluded.posted_kind, listings.posted_kind)`);
-  const stmts = all.map((l) => {
-    if (!known.has(l.id)) fresh.push(l);
+  const changed = (l, p) => p.price !== l.price || p.title !== l.title || p.url !== l.url || p.image !== l.image ||
+    p.locality !== l.locality || (p.area || 0) !== (l.area || 0) ||
+    (l.lat != null && (p.lat !== l.lat || p.lon !== l.lon)) || (l.km != null && p.km !== l.km) ||
+    (l.posted_at != null && p.posted_at == null);
+  const toWrite = all.filter((l) => {
+    const p = known.get(l.id);
+    if (!p) { fresh.push(l); return true; }
+    return changed(l, p) || now - (p.last_seen || 0) >= SEEN_REFRESH;
+  });
+  stats.written = toWrite.length;
+  const stmts = toWrite.map((l) => {
     return stmt.bind(l.id, l.source, l.title, l.price, l.disposition, l.area || 0, l.locality, l.lat ?? null, l.lon ?? null, l.km ?? null,
       l.url, l.image, now, now, l.posted_at ?? null, l.posted_at ? l.posted_kind : null, l.approx || 0, l.geoq ?? null);
   });
@@ -404,7 +415,7 @@ export default {
       for (const l of results) {
         // aktivní = byl vidět při posledním úspěšném stažení svého zdroje
         const ok = Number(meta["ok_" + l.source] || 0);
-        l.active = !ok || l.last_seen >= ok - 90 * 60 * 1000;
+        l.active = !ok || l.last_seen >= ok - SEEN_REFRESH - 90 * 60 * 1000;
         if (!l.posted_at) delete l.posted_at;
         firstRun[l.source] = Number(meta["first_" + l.source] || 0);
       }
