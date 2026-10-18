@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Byty Lískovec</title>
+<meta name="theme-color" content="#1f3d2b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Byty">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon.svg">
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#1c1c1a;--mute:#6b6a64;--acc:#1f3d2b;--new:#d9572b;--line:#e4e0d6}
+*{box-sizing:border-box}body{margin:0;font:16px/1.4 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{position:sticky;top:0;z-index:5;background:var(--acc);color:#fff;padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
+h1{margin:0;font-size:20px}.sub{font-size:13px;opacity:.8}
+.filters{background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:grid;gap:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 12px;font-size:14px}
+.chip.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+label{font-size:14px;color:var(--mute)}input[type=range]{width:100%}
+select,button{font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:#fff}
+button.primary{background:var(--acc);color:#fff;border:0}
+main{padding:12px 16px 40px;display:grid;gap:12px}
+.card{background:var(--card);border-radius:14px;overflow:hidden;border:1px solid var(--line);display:flex;text-decoration:none;color:inherit}
+.card img{width:120px;height:110px;object-fit:cover;flex:none;background:#ddd}
+.card .b{padding:10px 12px;min-width:0}.price{font-weight:700;font-size:18px}
+.meta{font-size:13px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{display:inline-block;background:var(--new);color:#fff;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin-left:6px}
+.empty{text-align:center;color:var(--mute);padding:40px 0}
+</style>
+</head>
+<body>
+<header><h1>Byty Lískovec & Bohunice</h1><div class="sub" id="status">Načítám…</div></header>
+<section class="filters">
+  <div class="row" id="disp"></div>
+  <div><label>Max. cena: <b id="pv"></b> Kč</label><input id="price" type="range" min="8000" max="26000" step="500" value="20000"></div>
+  <div><label>Max. vzdálenost od práce: <b id="kv"></b> km</label><input id="km" type="range" min="0.5" max="8" step="0.5" value="4"></div>
+  <div class="row">
+    <select id="sort"><option value="new">Nejnovější</option><option value="cheap">Nejlevnější</option><option value="near">Nejblíž práci</option><option value="ppm">Nejlevnější za m²</option></select>
+    <button class="primary" id="refresh">Hledat teď</button>
+  </div>
+</section>
+<main id="list"></main>
+<script>
+const DISPS=["1+kk","1+1","2+kk","2+1","3+kk","3+1"];
+const store={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+let state=store.get("f",{disp:["1+1","2+kk","2+1","3+kk"],price:20000,km:4,sort:"new"});
+let data=[],lastRun=null,seen=new Set(store.get("seen",[]));
+const $=id=>document.getElementById(id);
+function renderFilters(){
+  $("disp").innerHTML=DISPS.map(d=>`<button class="chip ${state.disp.includes(d)?"on":""}" data-d="${d}">${d}</button>`).join("");
+  $("price").value=state.price;$("pv").textContent=(+state.price).toLocaleString("cs-CZ");
+  $("km").value=state.km;$("kv").textContent=state.km;$("sort").value=state.sort;
+}
+function render(){
+  store.set("f",state);
+  let l=data.filter(x=>state.disp.includes(x.disposition)&&x.price&&x.price<=state.price&&x.km<=state.km);
+  const s={new:(a,b)=>b.first_seen-a.first_seen,cheap:(a,b)=>a.price-b.price,near:(a,b)=>a.km-b.km,
+    ppm:(a,b)=>(a.area?a.price/a.area:1e9)-(b.area?b.price/b.area:1e9)}[state.sort];
+  l.sort(s);
+  $("list").innerHTML=l.length?l.map(x=>`<a class="card" href="${x.url}" target="_blank" rel="noopener">
+    <img src="${x.image||""}" alt="" loading="lazy">
+    <div class="b"><div class="price">${x.price.toLocaleString("cs-CZ")} Kč${seen.has(x.id)?"":'<span class="badge">NOVÉ</span>'}</div>
+    <div>${x.disposition}${x.area?" · "+x.area+" m²":""}</div>
+    <div class="meta">${x.locality}</div>
+    <div class="meta">${x.km} km od práce · ${x.source} · ${new Date(x.first_seen).toLocaleDateString("cs-CZ")}</div></div></a>`).join("")
+    :`<div class="empty">Teď nic neodpovídá filtrům.</div>`;
+  $("status").textContent=`${l.length} bytů · aktualizováno ${lastRun?new Date(lastRun).toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"}):"–"}`;
+}
+async function load(){
+  try{const r=await fetch("/api/listings");const j=await r.json();data=j.listings;lastRun=j.lastRun;render();}
+  catch{$("status").textContent="Nejde se připojit, zkusím znovu…";}
+}
+function markSeen(){data.forEach(x=>seen.add(x.id));store.set("seen",[...seen].slice(-3000));}
+$("disp").onclick=e=>{const d=e.target.dataset.d;if(!d)return;state.disp=state.disp.includes(d)?state.disp.filter(x=>x!==d):[...state.disp,d];renderFilters();render()};
+$("price").oninput=e=>{state.price=+e.target.value;$("pv").textContent=state.price.toLocaleString("cs-CZ");render()};
+$("km").oninput=e=>{state.km=+e.target.value;$("kv").textContent=state.km;render()};
+$("sort").onchange=e=>{state.sort=e.target.value;render()};
+$("refresh").onclick=async()=>{$("refresh").textContent="Hledám…";try{await fetch("/api/refresh",{method:"POST"})}catch{}await load();$("refresh").textContent="Hledat teď"};
+document.addEventListener("visibilitychange",()=>{if(document.hidden)markSeen();else load()});
+setInterval(load,60000); // samo se obnovuje každou minutu
+renderFilters();load();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js");
+</script>
+</body>
+</html>
