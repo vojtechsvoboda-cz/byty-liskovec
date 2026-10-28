@@ -24,3 +24,10 @@ Nebo přes Git: pushni složku na GitHub a v Cloudflare → Workers → Import f
 Sreality, Bezrealitky, UlovDomov (API s GPS), iDNES Reality a Bazoš (HTML, poloha se dohledává přes Nominatim a ukládá do tabulky `geo`).
 Další zdroj = nová funkce v poli `SOURCES` v `src/index.js`. Statistiky posledního běhu jsou v tabulce `meta` pod klíčem `last_stats`.
 Stejný byt z více webů aplikace sloučí do jedné karty („Také na …“).
+
+## Spotřeba a aktivita
+- Přehled použití aplikace: `/stats` (anonymní denní počty otevření, kliků a kliků z upozornění).
+- Vlastní zařízení označíš jednou otevřením `/?ja=1` (zrušíš `/?ja=0`), pak se počítá zvlášť a nebudí stahování.
+- Úsporný režim: teta aktivní do 4 dnů → kontrola každých 20 min; 4–8 dní → jednou za 2 h; déle → pauza, dokud se appka znovu neotevře.
+- Appka se každou minutu ptá jen na čas poslední aktualizace (`/api/status`) a celý seznam stáhne, až když se změnil.
+- Inzeráty, které 14 dní nikde nejsou, se jednou denně mažou.

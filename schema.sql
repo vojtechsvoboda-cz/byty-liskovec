@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS listings (
   approx INTEGER DEFAULT 0, -- 1 = poloha dohledaná podle adresy/PSČ
   geoq TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_last_seen ON listings(last_seen);
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS geo (q TEXT PRIMARY KEY, lat REAL, lon REAL, ok INTEGER);
+-- anonymní denní počty použití aplikace (stránka /stats)
+CREATE TABLE IF NOT EXISTS activity (day TEXT, kind TEXT, who TEXT, n INTEGER, PRIMARY KEY (day, kind, who));

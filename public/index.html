@@ -409,6 +409,11 @@ const DEFAULT_AREA=[[49.1840,16.5560],[49.1835,16.5790],[49.1770,16.5960],[49.14
 const SOURCES=["Sreality","Bezrealitky","UlovDomov","iDNES Reality","Bazoš"];
 const DEFAULTS={off:[],disp:["1+1","2+kk","2+1","3+kk"],price:20000,area:0,km:4,loc:"area",sort:"new",view:"grid",tab:"all"};
 const store={get(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+// anonymní počítadlo použití (bez IP a identifikátorů) – přehled je na /stats
+(()=>{const q=new URLSearchParams(location.search);if(q.has("ja")){store.set("owner",q.get("ja")!=="0");history.replaceState(null,"",location.pathname)}})();
+const OWNER=store.get("owner",false);
+const STANDALONE=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+function hit(k){try{const b=JSON.stringify({k,who:OWNER?"ja":""});if(navigator.sendBeacon)navigator.sendBeacon("/api/hit",new Blob([b],{type:"application/json"}));else fetch("/api/hit",{method:"POST",body:b,keepalive:true})}catch{}}
 let S=Object.assign({},DEFAULTS,store.get("s3",{}));if(!Array.isArray(S.off))S.off=[];
 let AREA=store.get("area",DEFAULT_AREA);
 let favs=new Set(store.get("favs",[]));
@@ -515,19 +520,26 @@ function dedupe(list){
   return list;
 }
 // data
+let mode="active";
+// levná kontrola: zeptá se jen na čas poslední aktualizace a celý seznam stáhne, až když se změnil
+async function poll(){
+  if(document.hidden||busy)return;
+  try{const j=await fetch("/api/status",{cache:"no-store"}).then(r=>r.json());if(j.mode)mode=j.mode;
+    if(j.lastRun!==lastRun)await load(true);else tick()}catch{}
+}
 async function load(silent){
   try{
     const j=await fetch("/api/listings",{cache:"no-store"}).then(r=>r.json());
     if(knownIds&&silent){const add=j.listings.filter(x=>!knownIds.has(x.id)).length;if(add)toast(`${add} ${plural(add,"nový byt","nové byty","nových bytů")}`,"sparkles")}
-    knownIds=new Set(j.listings.map(x=>x.id));data=dedupe(j.listings);lastRun=j.lastRun;firstRun=j.firstRun||{};
-    fillFilters();tick();$("mInfo").textContent=`${data.length} bytů v databázi · kontrola každých 20 min`;
+    knownIds=new Set(j.listings.map(x=>x.id));data=dedupe(j.listings);lastRun=j.lastRun;firstRun=j.firstRun||{};if(j.mode)mode=j.mode;
+    fillFilters();tick();$("mInfo").textContent=`${data.length} bytů v databázi · ${mode==="active"?"kontrola každých 20 min":mode==="slow"?"úsporný režim, kontrola jednou za 2 h":"stahování pozastaveno"}`;
     render(!silent);
   }catch{if(!busy){$("updated").textContent="bez připojení";$("live").classList.add("off")}}
 }
 function tick(){if(!lastRun||busy)return;$("updated").textContent=when(lastRun);$("live").classList.toggle("off",Date.now()-lastRun>45*6e4);
   const n=new Date();const next=new Date(n);next.setSeconds(0,0);next.setMinutes(Math.ceil((n.getMinutes()+1)/20)*20);
   $("lpLast").textContent=new Date(lastRun).toLocaleString("cs-CZ",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"});
-  $("lpNext").textContent=`za ${Math.max(1,Math.round((next-n)/6e4))} min`;$("lpCount").textContent=data.filter(active).length}
+  $("lpNext").textContent=mode==="active"?`za ${Math.max(1,Math.round((next-n)/6e4))} min`:mode==="slow"?"do 2 hodin":"po otevření appky";$("lpCount").textContent=data.filter(active).length}
 let busy=false;
 async function refreshNow(quiet){
   if(busy)return;busy=true;$("live").classList.add("busy");$("live").classList.remove("off");$("updated").textContent="aktualizuji…";
@@ -543,7 +555,7 @@ $("view").onclick=e=>{const b=e.target.closest("button");if(b&&S.view!==b.datase
 $("tabs").onclick=e=>{const b=e.target.closest("button");if(b){S.tab=b.dataset.tab;render()}};
 $("sort").onclick=e=>{const b=e.target.closest("button");if(b){S.sort=b.dataset.sort;render()}};
 function toggleFav(id,btn){
-  if(favs.has(id)){favs.delete(id);toast("Odebráno z oblíbených","heart-off")}else{favs.add(id);toast("Uloženo do oblíbených","heart")}
+  if(favs.has(id)){favs.delete(id);toast("Odebráno z oblíbených","heart-off")}else{favs.add(id);toast("Uloženo do oblíbených","heart");hit("fav")}
   store.set("favs",[...favs]);
   if(btn){btn.classList.toggle("on",favs.has(id));btn.classList.remove("pop");void btn.offsetWidth;btn.classList.add("pop")}
   $("nFav").textContent=data.filter(x=>favs.has(x.id)).length;
@@ -672,12 +684,19 @@ function renderTools(){
 function setEdit(on){editing=on;if(map){map.closePopup();drawMap()}}
 document.addEventListener("click",e=>{const b=e.target.closest(".leaflet-popup [data-fav]");if(b){e.preventDefault();toggleFav(b.dataset.fav,b);drawMap()}});
 
+document.addEventListener("click",e=>{const a=e.target.closest('a[target="_blank"]');if(a&&/^https:/.test(a.href)&&!a.href.startsWith(location.origin)&&a.closest(".card,.pop,.also"))hit("click")});
+
 // start
 fillFilters();resetUI(false);setF(fOpen);icons();render();
-load().then(()=>{if(!lastRun||Date.now()-lastRun>5*6e4)refreshNow(true)});
-setInterval(()=>load(true),60000);setInterval(tick,20000);
+hit(STANDALONE?"open_app":"open");
+// po otevření stáhnout nové byty, jen když jsou data starší než 20 min (jinak je čerstvě stáhl automat)
+load().then(()=>{if(!lastRun||Date.now()-lastRun>20*6e4)refreshNow(true)});
+setInterval(poll,60000);setInterval(tick,20000);
 document.fonts&&document.fonts.ready.then(segsAll);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)load(true)});
+let hiddenAt=0;
+document.addEventListener("visibilitychange",()=>{if(document.hidden){hiddenAt=Date.now();return}
+  if(hiddenAt&&Date.now()-hiddenAt>30*6e4){hit(STANDALONE?"open_app":"open");if(!lastRun||Date.now()-lastRun>20*6e4){refreshNow(true);return}}
+  poll()});
 if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js");
 </script>
 </body>

@@ -15,6 +15,7 @@ database_id = "4dfb9944-afc9-4331-a50f-e33880f4cbb2"
 crons = ["*/20 * * * *"]
 
 [vars]
+APP_URL = "https://byty-liskovec.vojtechs.workers.dev"
 # Domov pro seniory Mikuláškovo nám. 706/20, Starý Lískovec
 HOME_LAT = "49.17165"
 HOME_LON = "16.56547"

@@ -11,7 +11,17 @@ const MAX_KM_STORE = 8;      // ukládáme vše do 8 km od práce, jemné filtro
 const MAX_PRICE_STORE = 30000;
 const SUBREQ_BUDGET = 45;    // bezplatný Workers plán povoluje 50 podpožadavků na jedno spuštění
 // D1 free = 100k zapsaných řádků/den pro celý účet → nezměněné inzeráty zapisujeme jen jednou za SEEN_REFRESH
-const SEEN_REFRESH = 3 * 3600 * 1000;
+const SEEN_REFRESH = 4 * 3600 * 1000;
+const DAY = 24 * 3600 * 1000;
+const KEEP_DAYS = 14;        // inzeráty, které 14 dní nikdo neviděl, se mažou
+// úsporný režim podle toho, kdy naposledy někdo (kromě Vojty) appku použil
+const ACTIVE_DAYS = 4;       // do 4 dnů od poslední aktivity: kontrola každých 20 min
+const SLOW_DAYS = 8;         // 4–8 dní: kontrola jednou za 2 h; déle: pauza, dokud se appka znovu neotevře
+const SLOW_EVERY = 2 * 3600 * 1000;
+function modeFor(lastActivity, now = Date.now()) {
+  const idle = now - (lastActivity || now);
+  return idle <= ACTIVE_DAYS * DAY ? "active" : idle <= SLOW_DAYS * DAY ? "slow" : "paused";
+}
 
 // ---------- pomocné ----------
 function km(lat1, lon1, lat2, lon2) {
@@ -298,7 +308,7 @@ async function collect(env) {
   const hLat = parseFloat(env.HOME_LAT), hLon = parseFloat(env.HOME_LON);
   const metaRows = (await env.DB.prepare("SELECT k, v FROM meta").all()).results;
   const meta = Object.fromEntries(metaRows.map((r) => [r.k, r.v]));
-  const { results: ex } = await env.DB.prepare("SELECT id, lat, lon, approx, price, title, url, image, locality, area, km, posted_at, last_seen FROM listings").all();
+  const { results: ex } = await env.DB.prepare("SELECT id, source, first_seen, lat, lon, approx, price, title, url, image, locality, area, km, posted_at, last_seen FROM listings").all();
   const known = new Map(ex.map((r) => [r.id, r]));
   const stats = {}, errors = [], fresh = [], all = [], metaSet = [];
 
@@ -319,7 +329,10 @@ async function collect(env) {
   }
   // 2) Sreality: datum poslední úpravy z detailu – pár inzerátů za běh, nejbližší první
   try {
-    const { results: todo } = await env.DB.prepare("SELECT id FROM listings WHERE source='Sreality' AND posted_at IS NULL AND km IS NOT NULL ORDER BY first_seen DESC, km LIMIT ?").bind(Math.min(6, Math.max(0, F.left() - 14))).all();
+    // vybíráme z už načtených řádků, ať se kvůli tomu znovu nečte celá tabulka
+    const todo = ex.filter((r) => r.source === "Sreality" && r.posted_at == null && r.km != null && now - (r.last_seen || 0) < SEEN_REFRESH + 3 * 3600 * 1000)
+      .sort((a, b) => (b.first_seen - a.first_seen) || (a.km - b.km))
+      .slice(0, Math.min(6, Math.max(0, F.left() - 14)));
     const upd = [];
     for (const r of todo) {
       const res = await F("https://www.sreality.cz/api/v1/estates/" + r.id.replace("sreality-", ""), { headers: { "User-Agent": UA, Accept: "application/json" } });
@@ -378,6 +391,15 @@ async function collect(env) {
   });
   for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
 
+  // jednou denně smazat inzeráty, které už dlouho nikde nejsou (tabulka zůstane malá → levnější čtení)
+  if (now - Number(meta.last_prune || 0) > DAY) {
+    try {
+      const r = await env.DB.prepare("DELETE FROM listings WHERE last_seen < ?").bind(now - KEEP_DAYS * DAY).run();
+      stats.pruned = r.meta?.changes || 0;
+      metaSet.push(["last_prune", String(now)]);
+    } catch (e) { errors.push("Mazání: " + e.message); }
+  }
+
   metaSet.push(["last_run", String(now)], ["last_errors", JSON.stringify(errors)], ["last_stats", JSON.stringify({ ...stats, subrequests: F.count })]);
   await env.DB.batch(metaSet.map(([k, v]) => env.DB.prepare("INSERT OR REPLACE INTO meta (k,v) VALUES (?,?)").bind(k, v)));
 
@@ -394,16 +416,109 @@ async function notify(env, F, fresh) {
   for (const l of hits.slice(0, Math.max(0, Math.min(5, F.left() + 5)))) {
     await fetch("https://ntfy.sh/" + env.NTFY_TOPIC, {
       method: "POST",
-      headers: { Title: `Nový byt ${l.disposition} · ${l.price.toLocaleString("cs-CZ")} Kč`, Click: l.url, Tags: "house" },
+      headers: { Title: `Nový byt ${l.disposition} · ${l.price.toLocaleString("cs-CZ")} Kč`, Click: env.APP_URL ? `${env.APP_URL}/go/${encodeURIComponent(l.id)}` : l.url, Tags: "house" },
       body: `${l.locality} · ${l.km} km od práce${l.area ? " · " + l.area + " m²" : ""} · ${l.source}`,
     });
   }
 }
 
 // ---------- HTTP ----------
+// ---------- aktivita (anonymní denní počty, žádné IP ani identifikátory) ----------
+const HIT_KINDS = new Set(["open", "open_app", "click", "fav", "ntfy"]);
+function deviceOf(req) {
+  const ua = req.headers.get("user-agent") || "";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "iPhone";
+  if (/Android/i.test(ua)) return "Android";
+  if (/Macintosh|Windows|Linux|CrOS/i.test(ua)) return "počítač";
+  return "jiné";
+}
+async function logHit(env, req, kind, owner) {
+  const now = Date.now();
+  const day = new Date(now + 3600e3).toISOString().slice(0, 10); // přibližně český den
+  const who = owner ? "ja" : deviceOf(req);
+  const stmts = [env.DB.prepare("INSERT INTO activity (day, kind, who, n) VALUES (?,?,?,1) ON CONFLICT(day, kind, who) DO UPDATE SET n = n + 1").bind(day, kind, who)];
+  if (!owner) stmts.push(env.DB.prepare("INSERT OR REPLACE INTO meta (k,v) VALUES ('last_activity', ?), ('last_activity_kind', ?)").bind(String(now), kind + " · " + who));
+  await env.DB.batch(stmts);
+}
+async function readMeta(env, keys) {
+  const { results } = await env.DB.prepare(`SELECT k, v FROM meta WHERE k IN (${keys.map(() => "?").join(",")})`).bind(...keys).all();
+  return Object.fromEntries(results.map((r) => [r.k, r.v]));
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const MODE_TXT = { active: "Aktivní · kontrola každých 20 min", slow: "Úsporný · kontrola jednou za 2 h", paused: "Pozastaveno · probudí se otevřením appky" };
+
+async function statsPage(env) {
+  const m = await readMeta(env, ["last_activity", "last_activity_kind", "last_run", "last_stats"]);
+  const since = new Date(Date.now() - 30 * DAY + 3600e3).toISOString().slice(0, 10);
+  const { results } = await env.DB.prepare("SELECT day, kind, who, n FROM activity WHERE day >= ? ORDER BY day DESC").bind(since).all();
+  const KIND = { open: "Otevření v prohlížeči", open_app: "Otevření z plochy", click: "Klik na inzerát", fav: "Uložení do oblíbených", ntfy: "Klik z upozornění" };
+  const days = [...new Set(results.map((r) => r.day))];
+  const fmt = (t) => t ? new Date(Number(t)).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }) : "zatím nikdy";
+  const mode = modeFor(Number(m.last_activity || 0));
+  let st = {}; try { st = JSON.parse(m.last_stats || "{}"); } catch {}
+  const rows = days.map((d) => {
+    const items = results.filter((r) => r.day === d);
+    const others = items.filter((r) => r.who !== "ja");
+    const mine = items.filter((r) => r.who === "ja").reduce((a, r) => a + r.n, 0);
+    return `<tr><td>${esc(new Date(d + "T12:00:00").toLocaleDateString("cs-CZ", { weekday: "short", day: "numeric", month: "numeric" }))}</td>
+      <td>${others.length ? others.map((r) => `${esc(KIND[r.kind] || r.kind)} <b>${r.n}×</b> <span>${esc(r.who)}</span>`).join("<br>") : "<span>nic</span>"}</td>
+      <td class="r">${mine ? mine + "×" : "–"}</td></tr>`;
+  }).join("");
+  const html = `<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Byty Lískovec · aktivita</title>
+<style>:root{--ink:#0f1115;--mute:#80868f;--line:#e8eaee;--surface:#f5f6f8;--green:#18a058;--amber:#c27a00;--grey:#80868f}
+body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:var(--ink);background:#fff}
+main{max-width:720px;margin:0 auto;padding:28px max(20px,env(safe-area-inset-left)) 60px}
+h1{font-size:24px;letter-spacing:-.02em;margin:0 0 4px}p{margin:0;color:var(--mute)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:22px 0}
+.c{background:var(--surface);border-radius:14px;padding:14px 16px}.c small{color:var(--mute);display:block;font-size:12.5px}.c b{font-size:16px;font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+table{width:100%;border-collapse:collapse;font-size:14px}th{text-align:left;color:var(--mute);font-weight:500;font-size:12.5px;padding:8px 6px;border-bottom:1px solid var(--line)}
+td{padding:10px 6px;border-bottom:1px solid var(--line);vertical-align:top}td span{color:var(--mute)}.r{text-align:right;white-space:nowrap}
+a{color:#2563eb}</style></head><body><main>
+<h1>Aktivita v aplikaci</h1><p>Anonymní počty za posledních 30 dní. Tvoje zařízení (otevřená přes <a href="/?ja=1">/?ja=1</a>) se počítají zvlášť.</p>
+<div class="cards">
+<div class="c"><small>Naposledy použila teta</small><b>${esc(fmt(m.last_activity))}</b>${m.last_activity_kind ? `<small>${esc(m.last_activity_kind)}</small>` : ""}</div>
+<div class="c"><small>Režim stahování</small><b><span class="dot" style="background:var(--${mode === "active" ? "green" : mode === "slow" ? "amber" : "grey"})"></span>${esc(MODE_TXT[mode])}</b></div>
+<div class="c"><small>Poslední kontrola webů</small><b>${esc(fmt(m.last_run))}</b><small>${st.subrequests ? st.subrequests + " dotazů na weby" : ""}</small></div>
+</div>
+<table><thead><tr><th>Den</th><th>Teta a ostatní</th><th class="r">Ty</th></tr></thead><tbody>${rows || `<tr><td colspan="3"><span>Zatím žádná aktivita.</span></td></tr>`}</tbody></table>
+</main></body></html>`;
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+async function runScheduled(env) {
+  const now = Date.now();
+  const m = await readMeta(env, ["last_activity", "last_run"]);
+  let la = Number(m.last_activity || 0);
+  if (!la) { // první spuštění s počítadlem: začneme v plném režimu
+    la = now;
+    await env.DB.prepare("INSERT OR REPLACE INTO meta (k,v) VALUES ('last_activity', ?)").bind(String(la)).run();
+  }
+  const mode = modeFor(la, now);
+  if (mode === "paused") return;
+  if (mode === "slow" && now - Number(m.last_run || 0) < SLOW_EVERY - 5 * 60 * 1000) return;
+  await collect(env);
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
+    if (url.pathname === "/api/status") {
+      const m = await readMeta(env, ["last_run", "last_activity"]);
+      return Response.json({ lastRun: m.last_run ? Number(m.last_run) : null, mode: modeFor(Number(m.last_activity || 0)) }, { headers: { "cache-control": "no-store" } });
+    }
+    if (url.pathname === "/api/hit" && req.method === "POST") {
+      let b = {}; try { b = await req.json(); } catch {}
+      if (HIT_KINDS.has(b.k)) await logHit(env, req, b.k, b.who === "ja");
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname.startsWith("/go/")) {
+      const id = decodeURIComponent(url.pathname.slice(4));
+      const row = await env.DB.prepare("SELECT url FROM listings WHERE id = ?").bind(id).first();
+      try { await logHit(env, req, "ntfy", url.searchParams.get("who") === "ja"); } catch {}
+      return Response.redirect(row?.url && /^https:\/\//.test(row.url) ? row.url : new URL("/", url).href, 302);
+    }
+    if (url.pathname === "/stats") return statsPage(env);
     if (url.pathname === "/api/listings") {
       const metaRows = (await env.DB.prepare("SELECT k, v FROM meta").all()).results;
       const meta = Object.fromEntries(metaRows.map((r) => [r.k, r.v]));
@@ -419,7 +534,7 @@ export default {
         if (!l.posted_at) delete l.posted_at;
         firstRun[l.source] = Number(meta["first_" + l.source] || 0);
       }
-      return Response.json({ listings: results, lastRun: meta.last_run ? Number(meta.last_run) : null, firstRun });
+      return Response.json({ listings: results, lastRun: meta.last_run ? Number(meta.last_run) : null, firstRun, mode: modeFor(Number(meta.last_activity || 0)) });
     }
     if (url.pathname === "/api/refresh" && req.method === "POST") {
       const last = await env.DB.prepare("SELECT v FROM meta WHERE k='last_run'").first();
@@ -428,5 +543,5 @@ export default {
     }
     return env.ASSETS.fetch(req);
   },
-  async scheduled(_e, env, ctx) { ctx.waitUntil(collect(env)); },
+  async scheduled(_e, env, ctx) { ctx.waitUntil(runScheduled(env)); },
 };
