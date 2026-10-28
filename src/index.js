@@ -448,7 +448,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const MODE_TXT = { active: "Aktivní · kontrola každých 20 min", slow: "Úsporný · kontrola jednou za 2 h", paused: "Pozastaveno · probudí se otevřením appky" };
 
 async function statsPage(env) {
-  const m = await readMeta(env, ["last_activity", "last_activity_kind", "last_run", "last_stats"]);
+  const m = await readMeta(env, ["last_activity", "last_activity_kind", "last_run", "last_stats", "counting_since"]);
   const since = new Date(Date.now() - 30 * DAY + 3600e3).toISOString().slice(0, 10);
   const { results } = await env.DB.prepare("SELECT day, kind, who, n FROM activity WHERE day >= ? ORDER BY day DESC").bind(since).all();
   const KIND = { open: "Otevření v prohlížeči", open_app: "Otevření z plochy", click: "Klik na inzerát", fav: "Uložení do oblíbených", ntfy: "Klik z upozornění" };
@@ -477,7 +477,7 @@ td{padding:10px 6px;border-bottom:1px solid var(--line);vertical-align:top}td sp
 a{color:#2563eb}</style></head><body><main>
 <h1>Aktivita v aplikaci</h1><p>Anonymní počty za posledních 30 dní. Tvoje zařízení (otevřená přes <a href="/?ja=1">/?ja=1</a>) se počítají zvlášť.</p>
 <div class="cards">
-<div class="c"><small>Naposledy použila teta</small><b>${esc(fmt(m.last_activity))}</b>${m.last_activity_kind ? `<small>${esc(m.last_activity_kind)}</small>` : ""}</div>
+<div class="c"><small>Naposledy použila teta</small>${m.last_activity_kind ? `<b>${esc(fmt(m.last_activity))}</b><small>${esc(m.last_activity_kind)}</small>` : `<b>zatím nezaznamenáno</b><small>počítá se od ${esc(fmt(m.counting_since))}</small>`}</div>
 <div class="c"><small>Režim stahování</small><b><span class="dot" style="background:var(--${mode === "active" ? "green" : mode === "slow" ? "amber" : "grey"})"></span>${esc(MODE_TXT[mode])}</b></div>
 <div class="c"><small>Poslední kontrola webů</small><b>${esc(fmt(m.last_run))}</b><small>${st.subrequests ? st.subrequests + " dotazů na weby" : ""}</small></div>
 </div>
@@ -492,7 +492,7 @@ async function runScheduled(env) {
   let la = Number(m.last_activity || 0);
   if (!la) { // první spuštění s počítadlem: začneme v plném režimu
     la = now;
-    await env.DB.prepare("INSERT OR REPLACE INTO meta (k,v) VALUES ('last_activity', ?)").bind(String(la)).run();
+    await env.DB.prepare("INSERT OR REPLACE INTO meta (k,v) VALUES ('last_activity', ?), ('counting_since', ?)").bind(String(la), String(la)).run();
   }
   const mode = modeFor(la, now);
   if (mode === "paused") return;
